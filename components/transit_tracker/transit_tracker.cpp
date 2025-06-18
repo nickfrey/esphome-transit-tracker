@@ -421,6 +421,13 @@ void HOT TransitTracker::draw_schedule() {
 
   this->schedule_state_.mutex.lock();
 
+  int routeMaxWidth = 0;
+  for (const Trip &trip : this->schedule_state_.trips) {
+    int route_width, route_x_offset, route_baseline, route_height;
+    this->font_->measure(trip.route_name.c_str(), &route_width, &route_x_offset, &route_baseline, &route_height);
+    routeMaxWidth = (routeMaxWidth < route_width ? route_width : routeMaxWidth);
+  }
+
   int y_offset = 2;
   for (const Trip &trip : this->schedule_state_.trips) {
     this->display_->print(0, y_offset, this->font_, trip.route_color, display::TextAlign::TOP_LEFT, trip.route_name.c_str());
@@ -433,7 +440,7 @@ void HOT TransitTracker::draw_schedule() {
     int time_width, time_x_offset, time_baseline, time_height;
     this->font_->measure(time_display.c_str(), &time_width, &time_x_offset, &time_baseline, &time_height);
 
-    int headsign_clipping_end = this->display_->get_width() - time_width - 2;
+    int headsign_clipping_end = this->display_->get_width() - time_width - 4;
 
     Color time_color = trip.is_realtime ? Color(0x20FF00) : Color(0xa7a7a7);
     this->display_->print(this->display_->get_width() + 1, y_offset, this->font_, time_color, display::TextAlign::TOP_RIGHT, time_display.c_str());
@@ -448,7 +455,7 @@ void HOT TransitTracker::draw_schedule() {
     }
 
     this->display_->start_clipping(0, 0, headsign_clipping_end, this->display_->get_height());
-    this->display_->print(route_width + 3, y_offset, this->font_, trip.headsign.c_str());
+    this->display_->print(routeMaxWidth + 3, y_offset, this->font_, trip.headsign.c_str());
     this->display_->end_clipping();
 
     y_offset += route_height;
