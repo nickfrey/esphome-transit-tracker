@@ -441,7 +441,7 @@ for (const Trip &trip : this->schedule_state_.trips) {
     int time_width, time_x_offset, time_baseline, time_height;
     this->font_->measure(time_display.c_str(), &time_width, &time_x_offset, &time_baseline, &time_height);
 
-    int headsign_clipping_end = this->display_->get_width() - time_width - 2;
+    int headsign_clipping_end = this->display_->get_width() - time_width - 4;
 
     Color time_color = trip.is_realtime ? Color(0x20FF00) : Color(0xa7a7a7);
     this->display_->print(this->display_->get_width() + 1, y_offset, this->font_, time_color, display::TextAlign::TOP_RIGHT, time_display.c_str());
