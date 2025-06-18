@@ -430,6 +430,13 @@ void HOT TransitTracker::draw_schedule() {
     
     int y_offset = 2;
 
+    auto stop = "Kelsey Creek Rd:";
+    this->display_->print(0, y_offset, this->font_, stop);
+    int stop_height;
+    this->font_->measure(stop, nullptr, nullptr, nullptr, &stop_height);
+    y_offset += stop_height;
+    
+    
 for (const Trip &trip : this->schedule_state_.trips) {
     this->display_->print(0, y_offset, this->font_, trip.route_color, display::TextAlign::TOP_LEFT, trip.route_name.c_str());
 
