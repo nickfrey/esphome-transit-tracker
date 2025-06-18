@@ -425,7 +425,7 @@ void HOT TransitTracker::draw_schedule() {
     for (const Trip &trip : this->schedule_state_.trips) {
       int route_width, route_x_offset, route_baseline, route_height;
       this->font_->measure(trip.route_name.c_str(), &route_width, &route_x_offset, &route_baseline, &route_height);
-       routeMaxWidth = (routeMaxWidth > route_width ? route_width : routeMaxWidth);
+       routeMaxWidth = (routeMaxWidth < route_width ? route_width : routeMaxWidth);
     }
     
     int y_offset = 2;
