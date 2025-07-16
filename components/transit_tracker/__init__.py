@@ -25,6 +25,7 @@ CONF_STOPS = "stops"
 CONF_BASE_URL = "base_url"
 CONF_FONT_ID = "font_id"
 CONF_LIMIT = "limit"
+CONF_DISPLAY_LIMIT = "display_limit"
 CONF_ABBREVIATIONS = "abbreviations"
 CONF_STYLES = "styles"
 CONF_FEED_CODE = "feed_code"
@@ -49,6 +50,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.GenerateID(CONF_TIME_ID): cv.use_id(RealTimeClock),
         cv.Optional(CONF_BASE_URL): validate_ws_url,
         cv.Optional(CONF_LIMIT, default=3): cv.positive_int,
+        cv.Optional(CONF_DISPLAY_LIMIT, default=3): cv.positive_int,
         cv.Optional(CONF_FEED_CODE, default=""): cv.string,
         cv.Optional(CONF_TIME_DISPLAY, default="departure"): cv.one_of(
             "departure", "arrival"
@@ -60,6 +62,7 @@ CONFIG_SCHEMA = cv.Schema(
             cv.Schema(
                 {
                     cv.Required("stop_id"): cv.string,
+                    cv.Required("stop_name"): cv.string,
                     cv.Optional("time_offset", default="0s"): cv.time_period,
                     cv.Required(CONF_ROUTES): cv.ensure_list(cv.string),
                 }
@@ -116,12 +119,17 @@ async def to_code(config):
     cg.add(var.set_feed_code(config[CONF_FEED_CODE]))
     cg.add(var.set_schedule_string(_generate_schedule_string(config[CONF_STOPS])))
 
+    stops = config[CONF_STOPS]
+    for stop in stops:
+        cg.add(var.add_stop_name(stop['stop_id'], stop['stop_name']))
+
     display_departure_times = config[CONF_TIME_DISPLAY] == "departure"
     cg.add(var.set_display_departure_times(display_departure_times))
 
     cg.add(var.set_list_mode(config[CONF_LIST_MODE]))
 
     cg.add(var.set_limit(config[CONF_LIMIT]))
+    cg.add(var.set_display_limit(config[CONF_DISPLAY_LIMIT]))
 
     cg.add(var.set_unit_display(config[CONF_SHOW_UNITS]))
 

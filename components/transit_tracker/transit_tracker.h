@@ -36,7 +36,8 @@ class TransitTracker : public Component {
     void reconnect();
     void close(bool fully = false);
 
-    void draw_schedule();
+    void draw_current_page();
+    void next_subpage();
 
     void set_display(display::Display *display) { display_ = display; }
     void set_font(font::Font *font) { font_ = font; }
@@ -48,6 +49,7 @@ class TransitTracker : public Component {
     void set_schedule_string(const std::string &schedule_string) { schedule_string_ = schedule_string; }
     void set_list_mode(const std::string &list_mode) { list_mode_ = list_mode; }
     void set_limit(int limit) { limit_ = limit; }
+    void set_display_limit(int limit) { display_limit_ = limit; }
 
     void set_unit_display(UnitDisplay unit_display) { unit_display_ = unit_display; }
     void add_abbreviation(const std::string &from, const std::string &to) { abbreviations_[from] = to; }
@@ -56,6 +58,10 @@ class TransitTracker : public Component {
 
     void set_abbreviations_from_text(const std::string &text);
     void set_route_styles_from_text(const std::string &text);
+    void add_stop_name(const std::string &stop_id, const std::string &stop_name) {
+        stop_ids_.push_back(stop_id);
+        stop_names_[stop_id] = stop_name;
+    }
 
   protected:
     std::string from_now_(time_t unix_timestamp) const;
@@ -84,11 +90,23 @@ class TransitTracker : public Component {
     std::string list_mode_;
     bool display_departure_times_ = true;
     int limit_;
+    int display_limit_;
 
     UnitDisplay unit_display_ = UNIT_DISPLAY_LONG;
     std::map<std::string, std::string> abbreviations_;
     Color default_route_color_ = Color(0x028e51);
     std::map<std::string, RouteStyle> route_styles_;
+    std::map<std::string, std::string> stop_names_;
+    std::vector<std::string> stop_ids_;
+    
+    int current_stop_index_ = 0;
+    int current_subpage_index_ = 0;
+    int total_subpages_for_current_stop_ = 1;
+    std::string last_displayed_stop_name_;
+    
+    void next_stop();
+    void draw_stop_name();
+    void draw_schedule();
 };
 
 

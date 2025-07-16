@@ -121,6 +121,7 @@ void TransitTracker::on_ws_message_(websockets::WebsocketsMessage message) {
         }
       }
 
+      auto stop_id = trip["stopId"].as<std::string>();
       auto route_id = trip["routeId"].as<std::string>();
       auto route_style = this->route_styles_.find(route_id);
 
@@ -135,6 +136,7 @@ void TransitTracker::on_ws_message_(websockets::WebsocketsMessage message) {
       }
 
       this->schedule_state_.trips.push_back({
+        .stop_id = stop_id,
         .route_id = route_id,
         .route_name = route_name,
         .route_color = route_color,
@@ -378,6 +380,60 @@ void HOT TransitTracker::draw_realtime_icon_(int bottom_right_x, int bottom_righ
   }
 }
 
+void TransitTracker::next_subpage() {
+  current_subpage_index_++;
+
+  if (current_subpage_index_ >= total_subpages_for_current_stop_) {
+    this->next_stop();
+  }
+}
+
+void TransitTracker::next_stop() {
+  current_stop_index_ = (current_stop_index_ + 1) % stop_ids_.size();
+
+  const auto &stop_id = stop_ids_[current_stop_index_];
+  const std::string &current_stop_name = stop_names_[stop_id];
+
+  if (current_stop_name == last_displayed_stop_name_) {
+    total_subpages_for_current_stop_ = 1;  // Only schedule page
+  } else {
+    total_subpages_for_current_stop_ = 2;  // Stop name + schedule page
+    last_displayed_stop_name_ = current_stop_name;
+  }
+
+  current_subpage_index_ = 0;
+}
+
+void TransitTracker::draw_current_page() {
+  if (total_subpages_for_current_stop_ == 1) {
+    // Only schedule page exists
+    this->draw_schedule();
+  } else {
+    if (current_subpage_index_ == 0) {
+      this->draw_stop_name();
+    } else {
+      this->draw_schedule();
+    }
+  }
+}
+
+void HOT TransitTracker::draw_stop_name() {
+  if (stop_ids_.empty()) {
+    this->draw_text_centered_("No Stops Configured", Color(0x252627));
+    return;
+  }
+
+  const auto &stop_id = stop_ids_[current_stop_index_];
+  const auto it = stop_names_.find(stop_id);
+
+  std::string stop_name = (it != stop_names_.end()) ? it->second : "Unknown Stop";
+
+  int x = this->display_->get_width() / 2;
+  int y = this->display_->get_height() / 2;
+  this->display_->print(x, y - 8, this->font_, Color(0x252627), display::TextAlign::CENTER, stop_name.c_str());
+  this->display_->print(x, y + 8, this->font_, Color(0x252627), display::TextAlign::CENTER, "Upcoming Bus Departures");
+}
+
 void HOT TransitTracker::draw_schedule() {
   if (this->display_ == nullptr) {
     ESP_LOGW(TAG, "No display attached, cannot draw schedule");
@@ -409,7 +465,22 @@ void HOT TransitTracker::draw_schedule() {
     return;
   }
 
-  if (this->schedule_state_.trips.empty()) {
+  const auto &stop_id = stop_ids_[current_stop_index_];
+
+  std::lock_guard<std::mutex> lock(this->schedule_state_.mutex);
+
+  // Filter trips for this stop
+  std::vector<const Trip*> matching_trips;
+  for (const Trip &trip : this->schedule_state_.trips) {
+    if (trip.stop_id == stop_id) {
+      matching_trips.push_back(&trip);
+    }
+    if (matching_trips.size() >= this->display_limit_) {
+      break;  // Stop once display limit is reached
+    }
+  }
+
+  if (matching_trips.empty()) {
     auto message = "No upcoming arrivals";
     if (this->display_departure_times_) {
       message = "No upcoming departures";
@@ -419,49 +490,43 @@ void HOT TransitTracker::draw_schedule() {
     return;
   }
 
-  this->schedule_state_.mutex.lock();
-
   int routeMaxWidth = 0;
-  for (const Trip &trip : this->schedule_state_.trips) {
+  for (const Trip* trip : matching_trips) {
     int route_width, route_x_offset, route_baseline, route_height;
-    this->font_->measure(trip.route_name.c_str(), &route_width, &route_x_offset, &route_baseline, &route_height);
-    routeMaxWidth = (routeMaxWidth < route_width ? route_width : routeMaxWidth);
+    this->font_->measure(trip->route_name.c_str(), &route_width, &route_x_offset, &route_baseline, &route_height);
+    routeMaxWidth = std::max(routeMaxWidth, route_width);
   }
 
   int y_offset = 2;
-  for (const Trip &trip : this->schedule_state_.trips) {
-    this->display_->print(0, y_offset, this->font_, trip.route_color, display::TextAlign::TOP_LEFT, trip.route_name.c_str());
+  for (const Trip* trip : matching_trips) {
+    this->display_->print(0, y_offset, this->font_, trip->route_color, display::TextAlign::TOP_LEFT, trip->route_name.c_str());
 
     int route_width, route_x_offset, route_baseline, route_height;
-    this->font_->measure(trip.route_name.c_str(), &route_width, &route_x_offset, &route_baseline, &route_height);
+    this->font_->measure(trip->route_name.c_str(), &route_width, &route_x_offset, &route_baseline, &route_height);
 
-    auto time_display = this->from_now_(this->display_departure_times_ ? trip.departure_time : trip.arrival_time);
+    auto time_display = this->from_now_(this->display_departure_times_ ? trip->departure_time : trip->arrival_time);
 
     int time_width, time_x_offset, time_baseline, time_height;
     this->font_->measure(time_display.c_str(), &time_width, &time_x_offset, &time_baseline, &time_height);
 
     int headsign_clipping_end = this->display_->get_width() - time_width - 4;
 
-    Color time_color = trip.is_realtime ? Color(0x20FF00) : Color(0xa7a7a7);
+    Color time_color = trip->is_realtime ? Color(0x20FF00) : Color(0xa7a7a7);
     this->display_->print(this->display_->get_width() + 1, y_offset, this->font_, time_color, display::TextAlign::TOP_RIGHT, time_display.c_str());
 
-    if (trip.is_realtime) {
+    if (trip->is_realtime) {
       int icon_bottom_right_x = this->display_->get_width() - time_width - 2;
       int icon_bottom_right_y = y_offset + time_height - 6;
-
       headsign_clipping_end -= 8;
-
       this->draw_realtime_icon_(icon_bottom_right_x, icon_bottom_right_y);
     }
 
     this->display_->start_clipping(0, 0, headsign_clipping_end, this->display_->get_height());
-    this->display_->print(routeMaxWidth + 3, y_offset, this->font_, trip.headsign.c_str());
+    this->display_->print(routeMaxWidth + 3, y_offset, this->font_, trip->headsign.c_str());
     this->display_->end_clipping();
 
     y_offset += route_height;
   }
-
-  this->schedule_state_.mutex.unlock();
 }
 
 }  // namespace transit_tracker
