@@ -441,7 +441,7 @@ void HOT TransitTracker::draw_schedule() {
   }
 
   if (!esphome::network::is_connected()) {
-    this->draw_text_centered_("Waiting for network", Color(0x252627));
+    this->draw_text_centered_("Connecting to Wi-Fi", Color(0x252627));
     return;
   }
 
