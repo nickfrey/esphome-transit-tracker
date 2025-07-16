@@ -430,7 +430,7 @@ void HOT TransitTracker::draw_stop_name() {
 
   int x = this->display_->get_width() / 2;
   int y = this->display_->get_height() / 2;
-  this->display_->print(x, y - 8, this->font_, Color(0x252627), display::TextAlign::CENTER, stop_name.c_str());
+  this->display_->print(x, y - 8, this->font_, Color(0xFFFFFF), display::TextAlign::CENTER, stop_name.c_str());
   this->display_->print(x, y + 8, this->font_, Color(0x252627), display::TextAlign::CENTER, "Upcoming Bus Departures");
 }
 
