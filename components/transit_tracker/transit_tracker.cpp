@@ -380,14 +380,6 @@ void HOT TransitTracker::draw_realtime_icon_(int bottom_right_x, int bottom_righ
   }
 }
 
-void TransitTracker::next_subpage() {
-  current_subpage_index_++;
-
-  if (current_subpage_index_ >= total_subpages_for_current_stop_) {
-    this->next_stop();
-  }
-}
-
 void TransitTracker::next_stop() {
   current_stop_index_ = (current_stop_index_ + 1) % stop_ids_.size();
 
@@ -414,6 +406,28 @@ void TransitTracker::draw_current_page() {
     } else {
       this->draw_schedule();
     }
+  }
+}
+
+void TransitTracker::tick() {
+  unsigned long now = millis();
+  if (now - last_page_switch_ >= current_page_duration_) {
+    current_subpage_index_++;
+
+    if (current_subpage_index_ >= total_subpages_for_current_stop_) {
+      this->next_stop();  // also resets current_subpage_index_ = 0
+    }
+
+    this->draw_current_page();
+
+    // Set duration based on new subpage
+    if (total_subpages_for_current_stop_ == 1 || current_subpage_index_ == 1) {
+      current_page_duration_ = 8000;  // schedule page
+    } else {
+      current_page_duration_ = 5000;  // stop name page
+    }
+
+    last_page_switch_ = now;
   }
 }
 

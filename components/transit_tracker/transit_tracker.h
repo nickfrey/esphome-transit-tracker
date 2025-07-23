@@ -37,7 +37,7 @@ class TransitTracker : public Component {
     void close(bool fully = false);
 
     void draw_current_page();
-    void next_subpage();
+    void tick();
 
     void set_display(display::Display *display) { display_ = display; }
     void set_font(font::Font *font) { font_ = font; }
@@ -103,6 +103,8 @@ class TransitTracker : public Component {
     int current_subpage_index_ = 0;
     int total_subpages_for_current_stop_ = 1;
     std::string last_displayed_stop_name_;
+    unsigned long last_page_switch_ = 0;
+    unsigned long current_page_duration_ = 0;
     
     void next_stop();
     void draw_stop_name();
