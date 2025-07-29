@@ -162,6 +162,8 @@ void TransitTracker::on_ws_event_(websockets::WebsocketsEvent event, String data
   if (event == websockets::WebsocketsEvent::ConnectionOpened) {
     ESP_LOGD(TAG, "WebSocket connection opened");
 
+    update_schedule_string_from_remote_config();
+
     auto message = json::build_json([this](JsonObject root) {
       root["event"] = "schedule:subscribe";
 
@@ -246,6 +248,68 @@ void TransitTracker::connect_ws_() {
     this->connection_attempts_ = 0;
     this->status_clear_error();
   }
+}
+
+void TransitTracker::update_schedule_string_from_remote_config() {
+  if (this->config_url_.empty() || this->tracker_name_.empty()) {
+    ESP_LOGE(TAG, "Missing config URL or tracker name");
+    return;
+  }
+
+  ESP_LOGD(TAG, "Fetching schedule from config URL: %s", this->config_url_.c_str());
+
+  HTTPClient http;
+  http.begin(this->config_url_.c_str());
+  int httpCode = http.GET();
+
+  if (httpCode != HTTP_CODE_OK) {
+    ESP_LOGE(TAG, "Failed to fetch config JSON. HTTP code: %d", httpCode);
+    return;
+  }
+
+  std::string payload = http.getString().c_str();
+  http.end();
+
+  std::string new_schedule_string;
+  std::map<std::string, std::string> new_stop_names;
+  std::vector<std::string> new_stop_ids;
+
+  bool success = json::parse_json(payload, [this, &new_schedule_string, &new_stop_names, &new_stop_ids](JsonObject root) -> bool {
+    if (!root.containsKey(this->tracker_name_)) {
+      ESP_LOGE(TAG, "Tracker name '%s' not found in config JSON", this->tracker_name_.c_str());
+      return false;
+    }
+
+    JsonArray stops = root[this->tracker_name_]["stops"].as<JsonArray>();
+    for (JsonObject stop : stops) {
+      std::string stop_id = stop["stopId"].as<std::string>();
+      std::string nickname = stop["nickname"].as<std::string>();
+
+      new_stop_ids.push_back(stop_id);
+      new_stop_names[stop_id] = nickname;
+
+      JsonArray routes = stop["routes"].as<JsonArray>();
+      for (const auto &route : routes) {
+        new_schedule_string += route.as<std::string>() + "," + stop_id + ",0;";
+      }
+    }
+
+    return true;
+  });
+
+  if (!success) {
+    this->status_set_error("Failed to parse schedule config JSON");
+    return;
+  }
+
+  if (!new_schedule_string.empty() && new_schedule_string.back() == ';') {
+    new_schedule_string.pop_back();
+  }
+
+  this->schedule_string_ = new_schedule_string;
+  this->stop_ids_ = new_stop_ids;
+  this->stop_names_ = new_stop_names;
+  ESP_LOGD(TAG, "Updated schedule_string_: %s", this->schedule_string_.c_str());
 }
 
 void TransitTracker::set_abbreviations_from_text(const std::string &text) {
@@ -381,6 +445,11 @@ void HOT TransitTracker::draw_realtime_icon_(int bottom_right_x, int bottom_righ
 }
 
 void TransitTracker::next_stop() {
+  if (stop_ids_.empty()) {
+    ESP_LOGW(TAG, "No stops loaded; skipping next_stop()");
+    return;
+  }
+
   current_stop_index_ = (current_stop_index_ + 1) % stop_ids_.size();
 
   const auto &stop_id = stop_ids_[current_stop_index_];
@@ -479,6 +548,11 @@ void HOT TransitTracker::draw_schedule() {
     return;
   }
 
+  if (stop_ids_.empty()) {
+    this->draw_text_centered_("No Stops Configured", Color(0x252627));
+    return;
+  }
+    
   const auto &stop_id = stop_ids_[current_stop_index_];
 
   std::lock_guard<std::mutex> lock(this->schedule_state_.mutex);
