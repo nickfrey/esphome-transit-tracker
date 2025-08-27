@@ -13,6 +13,8 @@ namespace transit_tracker {
 static const char *TAG = "transit_tracker.component";
 
 void TransitTracker::setup() {
+  update_schedule_string_from_remote_config();
+
   this->ws_client_.onMessage([this](websockets::WebsocketsMessage message) {
     this->on_ws_message_(message);
   });
@@ -161,8 +163,6 @@ void TransitTracker::on_ws_message_(websockets::WebsocketsMessage message) {
 void TransitTracker::on_ws_event_(websockets::WebsocketsEvent event, String data) {
   if (event == websockets::WebsocketsEvent::ConnectionOpened) {
     ESP_LOGD(TAG, "WebSocket connection opened");
-
-    update_schedule_string_from_remote_config();
 
     auto message = json::build_json([this](JsonObject root) {
       root["event"] = "schedule:subscribe";
