@@ -108,94 +108,144 @@ void TransitTracker::on_shutdown() {
 
 void TransitTracker::on_ws_message_(websockets::WebsocketsMessage message) {
   ESP_LOGV(TAG, "Received message: %s", message.rawData().c_str());
+    
+  // Tune to your payload ceiling (bytes). Keep headroom for parsing overhead.
+   constexpr size_t JSON_CAP = 48 * 1024;
+  
+  // --- Allocate the JSON document in PSRAM so the internal pool lives there ---
+  void* doc_mem = heap_caps_malloc(sizeof(StaticJsonDocument<JSON_CAP>),
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!doc_mem) {
+    this->status_set_error("No PSRAM for JSON doc");
+    return;
+  }
+  auto* doc = new (doc_mem) StaticJsonDocument<JSON_CAP>();
 
-  bool valid = json::parse_json(message.rawData(), [this](JsonObject root) -> bool {
-    if (root["event"].as<std::string>() == "heartbeat") {
-      ESP_LOGD(TAG, "Received heartbeat");
-      this->last_heartbeat_ = millis();
-      return true;
-    }
+  auto cleanup_doc = [&](){
+    doc->~StaticJsonDocument();
+    heap_caps_free(doc_mem);
+  };
 
-    if (root["event"].as<std::string>() != "schedule") {
-      return true;
-    }
-
-    ESP_LOGD(TAG, "Received schedule update");
-
-    this->schedule_state_.mutex.lock();
-
-    this->schedule_state_.trips.clear();
-
-    auto data = root["data"].as<JsonObject>();
-
-    for (auto trip : data["trips"].as<JsonArray>()) {
-      std::string headsign = trip["headsign"].as<std::string>();
-      for (const auto &abbr : this->abbreviations_) {
-        size_t pos = headsign.find(abbr.first);
-        if (pos != std::string::npos) {
-          ESP_LOGV(TAG, "Applying abbreviation '%s' -> '%s' in headsign", abbr.first.c_str(), abbr.second.c_str());
-          headsign.replace(pos, abbr.first.length(), abbr.second);
-        }
-      }
-
-      auto stop_id = trip["stopId"].as<std::string>();
-      auto route_id = trip["routeId"].as<std::string>();
-      auto route_style = this->route_styles_.find(route_id);
-
-      Color route_color = this->default_route_color_;
-      std::string route_name = trip["routeName"].as<std::string>();
-
-      if (route_style != this->route_styles_.end()) {
-        route_color = route_style->second.color;
-        route_name = route_style->second.name;
-      } else if (!trip["routeColor"].isNull()) {
-        route_color = Color(std::stoul(trip["routeColor"].as<std::string>(), nullptr, 16));
-      }
-
-      this->schedule_state_.trips.push_back({
-        .stop_id = stop_id,
-        .route_id = route_id,
-        .route_name = route_name,
-        .route_color = route_color,
-        .headsign = headsign,
-        .arrival_time = trip["arrivalTime"].as<time_t>(),
-        .departure_time = trip["departureTime"].as<time_t>(),
-        .is_realtime = trip["isRealtime"].as<bool>(),
-      });
-    }
-
-    this->schedule_state_.mutex.unlock();
-
-    return true;
-  });
-
-  if (!valid) {
+  DeserializationError err = deserializeJson(*doc, message.rawData());
+  if (err) {
+    cleanup_doc();
     this->status_set_error("Failed to parse schedule data");
     return;
   }
+
+  JsonObject root = doc->as<JsonObject>();
+  const char* event = root["event"] | "";
+
+  if (strcmp(event, "heartbeat") == 0) {
+    ESP_LOGD(TAG, "Received heartbeat");
+    this->last_heartbeat_ = millis();
+    cleanup_doc();
+    return;
+  }
+
+  if (strcmp(event, "schedule") != 0) {
+    this->status_set_error("Failed to parse schedule data");
+    cleanup_doc();
+    return;
+  }
+
+  ESP_LOGD(TAG, "Received schedule update");
+
+  this->schedule_state_.mutex.lock();
+  this->schedule_state_.trips.clear();
+
+  JsonObject data = root["data"];
+  JsonArray trips = data["trips"].as<JsonArray>();
+
+  for (JsonObject trip : trips) {
+    std::string headsign = trip["headsign"].as<const char*>();
+
+    for (const auto &abbr : this->abbreviations_) {
+      size_t pos = headsign.find(abbr.first);
+      if (pos != std::string::npos) {
+        ESP_LOGV(TAG, "Applying abbreviation '%s' -> '%s' in headsign",
+                 abbr.first.c_str(), abbr.second.c_str());
+        headsign.replace(pos, abbr.first.length(), abbr.second);
+      }
+    }
+
+    std::string stop_id   = trip["stopId"].as<const char*>();
+    std::string route_id  = trip["routeId"].as<const char*>();
+    std::string route_name = trip["routeName"].as<const char*>();
+
+    Color route_color = this->default_route_color_;
+
+    auto route_style = this->route_styles_.find(route_id);
+    if (route_style != this->route_styles_.end()) {
+      route_color = route_style->second.color;
+      route_name  = route_style->second.name;
+    } else if (!trip["routeColor"].isNull()) {
+      route_color = Color(std::stoul(trip["routeColor"].as<const char*>(), nullptr, 16));
+    }
+
+    this->schedule_state_.trips.push_back({
+      .stop_id        = std::move(stop_id),
+      .route_id       = std::move(route_id),
+      .route_name     = std::move(route_name),
+      .route_color    = route_color,
+      .headsign       = std::move(headsign),
+      .arrival_time   = trip["arrivalTime"].as<time_t>(),
+      .departure_time = trip["departureTime"].as<time_t>(),
+      .is_realtime    = trip["isRealtime"].as<bool>(),
+    });
+  }
+
+  this->schedule_state_.mutex.unlock();
+
+  cleanup_doc();
 }
 
 void TransitTracker::on_ws_event_(websockets::WebsocketsEvent event, String data) {
   if (event == websockets::WebsocketsEvent::ConnectionOpened) {
     ESP_LOGD(TAG, "WebSocket connection opened");
 
-    auto message = json::build_json([this](JsonObject root) {
-      root["event"] = "schedule:subscribe";
+    constexpr size_t JSON_CAP = 4 * 1024; // Adjust based on max outbound size
 
-      auto data = root.createNestedObject("data");
+    // --- Allocate StaticJsonDocument in PSRAM ---
+    void* doc_mem = heap_caps_malloc(sizeof(StaticJsonDocument<JSON_CAP>),
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!doc_mem) {
+      ESP_LOGE(TAG, "Failed to allocate PSRAM for outbound JSON");
+      return;
+    }
 
-      if (!this->feed_code_.empty()) {
-        data["feedCode"] = this->feed_code_;
-      }
+    auto* doc = new (doc_mem) StaticJsonDocument<JSON_CAP>();
 
-      data["routeStopPairs"] = this->schedule_string_;
-      data["limit"] = this->limit_;
-      data["sortByDeparture"] = this->display_departure_times_;
-      data["listMode"] = this->list_mode_;
-    });
+    // Helper to free PSRAM safely
+    auto cleanup_doc = [&]() {
+      doc->~StaticJsonDocument();
+      heap_caps_free(doc_mem);
+    };
+
+    // --- Build JSON ---
+    JsonObject root = doc->to<JsonObject>();
+    root["event"] = "schedule:subscribe";
+
+    JsonObject data = root.createNestedObject("data");
+
+    if (!this->feed_code_.empty()) {
+      data["feedCode"] = this->feed_code_;
+    }
+
+    data["routeStopPairs"]     = this->schedule_string_;
+    data["limit"]              = this->limit_;
+    data["sortByDeparture"]    = this->display_departure_times_;
+    data["listMode"]           = this->list_mode_;
+
+    // --- Serialize directly from PSRAM ---
+    std::string message;
+    serializeJson(*doc, message);
 
     ESP_LOGV(TAG, "Sending message: %s", message.c_str());
     this->ws_client_.send(message.c_str());
+
+    // --- Free PSRAM ---
+    cleanup_doc();
   } else if (event == websockets::WebsocketsEvent::ConnectionClosed) {
     ESP_LOGD(TAG, "WebSocket connection closed");
     if (!this->fully_closed_ && this->connection_attempts_ == 0) {
