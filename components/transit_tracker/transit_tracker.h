@@ -44,10 +44,9 @@ class TransitTracker : public Component {
     void set_rtc(time::RealTimeClock *rtc) { rtc_ = rtc; }
 
     void set_base_url(const std::string &base_url) { base_url_ = base_url; }
-    void set_config_url(const std::string &config_url) { config_url_ = config_url; }
     void set_feed_code(const std::string &feed_code) { feed_code_ = feed_code; }
     void set_display_departure_times(bool display_departure_times) { display_departure_times_ = display_departure_times; }
-    void set_tracker_name(const std::string &name) { tracker_name_ = name; }
+    void set_schedule_string(const std::string &schedule_string) { schedule_string_ = schedule_string; }
     void set_list_mode(const std::string &list_mode) { list_mode_ = list_mode; }
     void set_limit(int limit) { limit_ = limit; }
     void set_display_limit(int limit) { display_limit_ = limit; }
@@ -59,6 +58,10 @@ class TransitTracker : public Component {
 
     void set_abbreviations_from_text(const std::string &text);
     void set_route_styles_from_text(const std::string &text);
+    void add_stop_name(const std::string &stop_id, const std::string &stop_name) {
+        stop_ids_.push_back(stop_id);
+        stop_names_[stop_id] = stop_name;
+    }
 
   protected:
     std::string from_now_(time_t unix_timestamp) const;
@@ -95,8 +98,6 @@ class TransitTracker : public Component {
     std::map<std::string, RouteStyle> route_styles_;
     std::map<std::string, std::string> stop_names_;
     std::vector<std::string> stop_ids_;
-    std::string tracker_name_;
-    std::string config_url_;
     
     int current_stop_index_ = 0;
     int current_subpage_index_ = 0;
@@ -108,7 +109,6 @@ class TransitTracker : public Component {
     void next_stop();
     void draw_stop_name();
     void draw_schedule();
-    void update_schedule_string_from_remote_config();
 };
 
 
