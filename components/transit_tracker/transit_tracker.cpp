@@ -7,6 +7,22 @@
 #include "esphome/components/watchdog/watchdog.h"
 #include "esphome/components/network/util.h"
 
+extern "C" {
+  #include "esp_system.h"
+  #include "esp_heap_caps.h"
+}
+
+namespace memstats {
+
+inline void log_memory_stats(const char *tag = "mem") {
+    ESP_LOGD("mem", "Total heap: %d", ESP.getHeapSize());
+    ESP_LOGD("mem", "Free heap: %d", ESP.getFreeHeap());
+    ESP_LOGD("mem", "Total PSRAM: %d", ESP.getPsramSize());
+    ESP_LOGD("mem", "Free PSRAM: %d", ESP.getFreePsram());
+}
+
+} // namespace memstats
+
 namespace esphome {
 namespace transit_tracker {
 
@@ -69,6 +85,7 @@ void TransitTracker::dump_config() {
   ESP_LOGCONFIG(TAG, "  List mode: %s", this->list_mode_.c_str());
   ESP_LOGCONFIG(TAG, "  Display departure times: %s", this->display_departure_times_ ? "true" : "false");
   ESP_LOGCONFIG(TAG, "  Unit display: %s", this->unit_display_ == UNIT_DISPLAY_LONG ? "long" : this->unit_display_ == UNIT_DISPLAY_SHORT ? "short" : "none");
+  memstats::log_memory_stats();
 }
 
 void TransitTracker::reconnect() {
