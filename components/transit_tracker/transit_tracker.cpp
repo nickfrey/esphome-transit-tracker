@@ -381,6 +381,11 @@ void HOT TransitTracker::draw_realtime_icon_(int bottom_right_x, int bottom_righ
 }
 
 void TransitTracker::next_stop() {
+  if (stop_ids_.empty()) {
+      ESP_LOGW(TAG, "No stops loaded; skipping next_stop()");
+      return;
+  }
+
   current_stop_index_ = (current_stop_index_ + 1) % stop_ids_.size();
 
   const auto &stop_id = stop_ids_[current_stop_index_];
@@ -481,6 +486,11 @@ void HOT TransitTracker::draw_schedule() {
 
   if (!this->has_ever_connected_) {
     this->draw_text_centered_("Loading...", Color(0x252627));
+    return;
+  }
+
+  if (stop_ids_.empty()) {
+    this->draw_text_centered_("No Stops Configured", Color(0x252627));
     return;
   }
 
