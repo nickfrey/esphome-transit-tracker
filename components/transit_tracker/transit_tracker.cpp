@@ -13,8 +13,6 @@ namespace transit_tracker {
 static const char *TAG = "transit_tracker.component";
 
 void TransitTracker::setup() {
-  update_schedule_string_from_remote_config();
-
   this->ws_client_.onMessage([this](websockets::WebsocketsMessage message) {
     this->on_ws_message_(message);
   });
