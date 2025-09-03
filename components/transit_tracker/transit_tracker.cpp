@@ -176,6 +176,7 @@ void TransitTracker::on_ws_message_(websockets::WebsocketsMessage message) {
   }
 
   if (strcmp(event, "schedule") != 0) {
+    ESP_LOGD("JSON", "Received message: %s", message.rawData().c_str());
     this->status_set_error("Failed to parse schedule data");
     cleanup_doc();
     return;
