@@ -12,6 +12,36 @@ extern "C" {
   #include "esp_heap_caps.h"
 }
 
+#include "mbedtls/platform.h"
+#include <string.h>
+#include "Arduino.h"
+
+static void *psram_calloc(size_t n, size_t size) {
+  size_t total_size = n * size;
+  void *ptr = heap_caps_malloc(total_size, MALLOC_CAP_SPIRAM);
+  if (ptr != nullptr) {
+    memset(ptr, 0, total_size);
+  }
+  return ptr;
+}
+
+static void psram_free(void *ptr) {
+  heap_caps_free(ptr);
+}
+
+static void override_mbedtls_allocators() {
+  static bool done = false;
+  if (!done) {
+    if (ESP.getPsramSize() > 0) {
+      mbedtls_platform_set_calloc_free(psram_calloc, psram_free);
+      ets_printf("[mbedTLS] Allocators set to PSRAM.\n");
+    } else {
+      ets_printf("[mbedTLS] PSRAM not found. Using default heap.\n");
+    }
+    done = true;
+  }
+}
+
 namespace memstats {
 
 inline void log_memory_stats(const char *tag = "mem") {
@@ -29,6 +59,8 @@ namespace transit_tracker {
 static const char *TAG = "transit_tracker.component";
 
 void TransitTracker::setup() {
+  override_mbedtls_allocators();
+  
   this->ws_client_.onMessage([this](websockets::WebsocketsMessage message) {
     this->on_ws_message_(message);
   });
