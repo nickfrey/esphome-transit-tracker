@@ -416,8 +416,8 @@ void TransitTracker::update_schedule_string_from_remote_config() {
 }
 
 void TransitTracker::poll_remote_config_changes(const size_t payloadHash) {
-  // reboot if server indicates change
-  this->set_timeout(30 * 1000, [this, payloadHash]() {
+  // reboot if server indicates change - every 4 hours
+  this->set_timeout(4 * 60 * 60 * 1000, [this, payloadHash]() {
     HTTPClient http2;
     http2.begin(this->config_url_.c_str());
     int code = http2.GET();
