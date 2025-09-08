@@ -109,6 +109,7 @@ class TransitTracker : public Component {
     void draw_stop_name();
     void draw_schedule();
     void update_schedule_string_from_remote_config();
+    void poll_remote_config_changes(const size_t payloadHash);
 };
 
 

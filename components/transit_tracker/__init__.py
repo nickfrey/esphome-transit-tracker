@@ -20,7 +20,6 @@ UNIT_DISPLAY_VALUES = {
     "none": UnitDisplay.UNIT_DISPLAY_NONE,
 }
 
-CONF_NAME = "name"
 CONF_BASE_URL = "base_url"
 CONF_CONFIG_URL = "config_url"
 CONF_FONT_ID = "font_id"
@@ -50,7 +49,6 @@ CONFIG_SCHEMA = cv.Schema(
         cv.GenerateID(CONF_TIME_ID): cv.use_id(RealTimeClock),
         cv.Optional(CONF_BASE_URL): validate_ws_url,
         cv.Optional(CONF_CONFIG_URL): cv.url,
-        cv.Optional(CONF_NAME): cv.string,
         cv.Optional(CONF_LIMIT, default=3): cv.positive_int,
         cv.Optional(CONF_DISPLAY_LIMIT, default=3): cv.positive_int,
         cv.Optional(CONF_FEED_CODE, default=""): cv.string,
@@ -100,8 +98,6 @@ async def to_code(config):
     
     if CONF_CONFIG_URL in config:
         cg.add(var.set_config_url(config[CONF_CONFIG_URL]))
-    
-    cg.add(var.set_tracker_name(config[CONF_NAME]))
 
     cg.add(var.set_feed_code(config[CONF_FEED_CODE]))
 

@@ -60,6 +60,7 @@ static const char *TAG = "transit_tracker.component";
 
 void TransitTracker::setup() {
   override_mbedtls_allocators();
+  update_schedule_string_from_remote_config();
   
   this->ws_client_.onMessage([this](websockets::WebsocketsMessage message) {
     this->on_ws_message_(message);
@@ -349,8 +350,8 @@ void TransitTracker::connect_ws_() {
 }
 
 void TransitTracker::update_schedule_string_from_remote_config() {
-  if (this->config_url_.empty() || this->tracker_name_.empty()) {
-    ESP_LOGE(TAG, "Missing config URL or tracker name");
+  if (this->config_url_.empty()) {
+    ESP_LOGE(TAG, "Missing config URL");
     return;
   }
 
@@ -366,19 +367,21 @@ void TransitTracker::update_schedule_string_from_remote_config() {
   }
 
   std::string payload = http.getString().c_str();
+  size_t payloadHash = std::hash<std::string>{}(payload);
   http.end();
 
   std::string new_schedule_string;
   std::map<std::string, std::string> new_stop_names;
   std::vector<std::string> new_stop_ids;
+  std::string macAddress = WiFi.macAddress().c_str();
 
-  bool success = json::parse_json(payload, [this, &new_schedule_string, &new_stop_names, &new_stop_ids](JsonObject root) -> bool {
-    if (!root.containsKey(this->tracker_name_)) {
-      ESP_LOGE(TAG, "Tracker name '%s' not found in config JSON", this->tracker_name_.c_str());
+  bool success = json::parse_json(payload, [&new_schedule_string, &new_stop_names, &new_stop_ids, macAddress](JsonObject root) -> bool {
+    if (!root.containsKey(macAddress)) {
+      ESP_LOGE(TAG, "Tracker of MAC address '%s' not found in config JSON", macAddress);
       return false;
     }
 
-    JsonArray stops = root[this->tracker_name_]["stops"].as<JsonArray>();
+    JsonArray stops = root[macAddress]["stops"].as<JsonArray>();
     for (JsonObject stop : stops) {
       std::string stop_id = stop["stopId"].as<std::string>();
       std::string nickname = stop["nickname"].as<std::string>();
@@ -408,6 +411,31 @@ void TransitTracker::update_schedule_string_from_remote_config() {
   this->stop_ids_ = new_stop_ids;
   this->stop_names_ = new_stop_names;
   ESP_LOGD(TAG, "Updated schedule_string_: %s", this->schedule_string_.c_str());
+    
+  this->poll_remote_config_changes(payloadHash);
+}
+
+void TransitTracker::poll_remote_config_changes(const size_t payloadHash) {
+  // reboot if server indicates change
+  this->set_timeout(30 * 1000, [this, payloadHash]() {
+    HTTPClient http2;
+    http2.begin(this->config_url_.c_str());
+    int code = http2.GET();
+    
+    if (code == HTTP_CODE_OK) {
+      std::string body = http2.getString().c_str();
+      size_t new_hash = std::hash<std::string>{}(body);
+      if (new_hash != payloadHash) {
+        ESP_LOGW(TAG, "Config content changed — rebooting");
+        ESP.restart();
+      } else {
+        ESP_LOGI(TAG, "Config unchanged after 30s");
+      }
+    }
+    http2.end();
+      
+    this->poll_remote_config_changes(payloadHash);
+  });
 }
 
 void TransitTracker::set_abbreviations_from_text(const std::string &text) {
